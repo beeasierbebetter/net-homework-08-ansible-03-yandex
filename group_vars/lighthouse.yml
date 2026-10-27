@@ -1,0 +1,4 @@
+---
+lighthouse_version: master
+lighthouse_dir: /var/www/lighthouse
+lighthouse_port: 80

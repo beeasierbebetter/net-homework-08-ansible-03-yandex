@@ -1,0 +1,142 @@
+---
+- name: Install ClickHouse
+  hosts: clickhouse
+  become: true
+  tags: [clickhouse]
+  tasks:
+    - name: ClickHouse | Install prerequisites
+      ansible.builtin.apt:
+        name: [ca-certificates, gnupg, dirmngr, python3-apt]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: ClickHouse | Add repository key
+      ansible.builtin.apt_key:
+        keyserver: keyserver.ubuntu.com
+        id: "8919F6BD2B48D754"
+        state: present
+
+    - name: ClickHouse | Add repository
+      ansible.builtin.apt_repository:
+        repo: deb https://packages.clickhouse.com/deb stable main
+        state: present
+
+    - name: ClickHouse | Install packages
+      ansible.builtin.apt:
+        name:
+          - "clickhouse-common-static={{ clickhouse_version }}"
+          - "clickhouse-client={{ clickhouse_version }}"
+          - "clickhouse-server={{ clickhouse_version }}"
+        state: present
+      notify: Restart ClickHouse
+
+    - name: ClickHouse | Enable and start service
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: started
+        enabled: true
+  handlers:
+    - name: Restart ClickHouse
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: restarted
+
+- name: Install Vector
+  hosts: vector
+  become: true
+  tags: [vector]
+  tasks:
+    - name: Vector | Download package
+      ansible.builtin.get_url:
+        url: >-
+          https://github.com/vectordotdev/vector/releases/download/v{{
+          vector_version }}/vector_{{ vector_version }}-1_amd64.deb
+        dest: "/var/cache/vector_{{ vector_version }}-1_amd64.deb"
+        mode: "0644"
+
+    - name: Vector | Install package
+      ansible.builtin.apt:
+        deb: "/var/cache/vector_{{ vector_version }}-1_amd64.deb"
+        state: present
+      notify: Restart Vector
+
+    - name: Vector | Create data directory
+      ansible.builtin.file:
+        path: /var/lib/vector
+        state: directory
+        owner: vector
+        group: vector
+        mode: "0755"
+
+    - name: Vector | Configure service
+      ansible.builtin.template:
+        src: vector.yaml.j2
+        dest: /etc/vector/vector.yaml
+        owner: root
+        group: vector
+        mode: "0640"
+      notify: Restart Vector
+
+    - name: Vector | Enable and start service
+      ansible.builtin.service:
+        name: vector
+        state: started
+        enabled: true
+  handlers:
+    - name: Restart Vector
+      ansible.builtin.service:
+        name: vector
+        state: restarted
+
+- name: Install LightHouse
+  hosts: lighthouse
+  become: true
+  tags: [lighthouse]
+  tasks:
+    - name: LightHouse | Install prerequisites
+      ansible.builtin.apt:
+        name: [ca-certificates, git, nginx]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: LightHouse | Download application
+      ansible.builtin.git:
+        repo: https://github.com/VKCOM/lighthouse.git
+        version: "{{ lighthouse_version }}"
+        dest: "{{ lighthouse_dir }}"
+
+    - name: LightHouse | Configure Nginx
+      ansible.builtin.template:
+        src: lighthouse.conf.j2
+        dest: /etc/nginx/sites-available/lighthouse
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload Nginx
+
+    - name: LightHouse | Disable default site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload Nginx
+
+    - name: LightHouse | Enable site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/lighthouse
+        dest: /etc/nginx/sites-enabled/lighthouse
+        state: link
+        force: true
+      notify: Reload Nginx
+
+    - name: LightHouse | Enable and start Nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+  handlers:
+    - name: Reload Nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded

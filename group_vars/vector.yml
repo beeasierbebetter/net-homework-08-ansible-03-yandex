@@ -1,0 +1,12 @@
+---
+vector_version: "0.60.0"
+vector_config:
+  sources:
+    internal:
+      type: internal_logs
+  sinks:
+    console:
+      type: console
+      inputs: [internal]
+      encoding:
+        codec: json
